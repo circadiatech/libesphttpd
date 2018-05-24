@@ -369,9 +369,12 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
 #endif
 
         //polling all exist client handle,wait until readable/writable
-        ret = select(maxfdp+1, &readset, &writeset, NULL, NULL);//&timeout
-        ESP_LOGD(TAG, "select ret");
+		struct timeval tv;
+		tv.tv_sec  = 0;
+		tv.tv_usec = 0;
+        ret = select(maxfdp+1, &readset, &writeset, NULL, &tv);//&timeout
         if(ret > 0){
+			ESP_LOGD(TAG, "select ret");
 #ifdef CONFIG_ESPHTTPD_SHUTDOWN_SUPPORT
             if (FD_ISSET(udpListenfd, &readset)) {
                 shutdown = true;
@@ -528,6 +531,10 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
                 }
             }
         }
+		else
+		{
+			vTaskDelay(1);
+		}
     }
 
 #ifdef CONFIG_ESPHTTPD_SHUTDOWN_SUPPORT
