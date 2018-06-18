@@ -348,7 +348,7 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
         if (!socketsFull) {
             FD_SET(listenfd, &readset);
             if (listenfd>maxfdp) maxfdp=listenfd;
-            ESP_LOGD(TAG, "Sel add listen %d", listenfd);
+            //ESP_LOGD(TAG, "Sel add listen %d", listenfd);
             if(!listeningForNewConnections)
             {
                 listeningForNewConnections = true;
