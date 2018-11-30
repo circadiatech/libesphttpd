@@ -117,7 +117,7 @@ static int ICACHE_FLASH_ATTR  httpdHexVal(char c) {
     return 0;
 }
 
-bool ICACHE_FLASH_ATTR httpdUrlDecode(char *val, int valLen, char *ret, int retLen, int* bytesWritten) {
+bool ICACHE_FLASH_ATTR httpdUrlDecode(const char *val, int valLen, char *ret, int retLen, int* bytesWritten) {
     int s=0; // index of theread position in val
     int d=0; // index of the write position in 'ret'
     int esced=0, escVal=0;
@@ -152,8 +152,8 @@ bool ICACHE_FLASH_ATTR httpdUrlDecode(char *val, int valLen, char *ret, int retL
 //zero-terminated result is written in buff, with at most buffLen bytes used. The
 //function returns the length of the result, or -1 if the value wasn't found. The
 //returned string will be urldecoded already.
-int ICACHE_FLASH_ATTR httpdFindArg(char *line, char *arg, char *buff, int buffLen) {
-    char *p, *e;
+int ICACHE_FLASH_ATTR httpdFindArg(const char *line, const char *arg, char *buff, int buffLen) {
+    const char *p, *e;
     if (line==NULL) return -1;
     const int arglen = strlen(arg);
     p=line;
@@ -240,7 +240,7 @@ void ICACHE_FLASH_ATTR httpdStartResponse(HttpdConnData *conn, int code) {
 #ifdef CONFIG_ESPHTTPD_CORS_SUPPORT
     // CORS headers
     httpdSend(conn, "Access-Control-Allow-Origin: *\r\n", -1);
-    httpdSend(conn, "Access-Control-Allow-Methods: GET,POST,OPTIONS\r\n", -1);
+    httpdSend(conn, "Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS\r\n", -1);
 #endif
 }
 
@@ -270,10 +270,14 @@ void ICACHE_FLASH_ATTR httpdRedirect(HttpdConnData *conn, const char *newUrl) {
 //Used to spit out a 404 error
 static CgiStatus ICACHE_FLASH_ATTR cgiNotFound(HttpdConnData *connData) {
     if (connData->isConnectionClosed) return HTTPD_CGI_DONE;
-    httpdStartResponse(connData, 404);
-    httpdEndHeaders(connData);
-    httpdSend(connData, "404 File not found.", -1);
-    return HTTPD_CGI_DONE;
+    if (connData->post.received == connData->post.len)
+    {
+        httpdStartResponse(connData, 404);
+        httpdEndHeaders(connData);
+        httpdSend(connData, "404 File not found.", -1);
+        return HTTPD_CGI_DONE;
+    }
+    return HTTPD_CGI_MORE; // make sure to eat-up all the post data that the client may be sending!
 }
 
 static const char* CHUNK_SIZE_TEXT = "0000\r\n";
@@ -684,6 +688,17 @@ static CallbackStatus ICACHE_FLASH_ATTR httpdParseHeader(char *h, HttpdConnData 
         } else {
             conn->getArgs=NULL;
         }
+
+#ifdef CONFIG_ESPHTTPD_SANITIZE_URLS
+        // Remove multiple repeated slashes in URL path.
+        while((e = strstr(conn->url, "//")) != NULL){
+            // Move string starting at second slash one place to the left.
+            // Use strlen() on the first slash so the '\0' will be copied too.
+            ESP_LOGD(TAG, "Cleaning up URL path: %s", conn->url);
+            memmove(e, e + 1, strlen(e));
+            ESP_LOGD(TAG, "Cleaned URL path: %s", conn->url);
+        }
+#endif // CONFIG_ESPHTTPD_SANITIZE_URLS
     } else if (strncasecmp(h, "Connection:", 11)==0) {
         i=11;
         //Skip trailing spaces
@@ -719,8 +734,9 @@ static CallbackStatus ICACHE_FLASH_ATTR httpdParseHeader(char *h, HttpdConnData 
             // It's multipart form data so let's pull out the boundary
             // TODO: implement multipart support in the server
             char *b;
-            if ((b = strstr(h, "boundary=")) != NULL) {
-                conn->post.multipartBoundary = b + 7;
+            const char* boundaryToken = "boundary=";
+            if ((b = strstr(h, boundaryToken)) != NULL) {
+                conn->post.multipartBoundary = b + strlen(boundaryToken);
                 ESP_LOGD(TAG, "boundary = %s", conn->post.multipartBoundary);
             }
         }
@@ -861,6 +877,7 @@ CallbackStatus ICACHE_FLASH_ATTR httpdRecvCb(HttpdInstance *pInstance, HttpdConn
             } else {
                 ESP_LOGE(TAG, "Unexpected data from client. %s", data);
                 status = CallbackError;
+                break; // avoid infinite loop
             }
         }
     }

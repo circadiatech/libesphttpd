@@ -21,6 +21,13 @@
 #include <netinet/in.h>
 #endif
 
+
+#ifdef linux
+    #define PLAT_RETURN void*
+#else
+    #define PLAT_RETURN void
+#endif
+
 struct RtosConnType{
 	int fd;
 	int needWriteDoneNotif;
@@ -67,6 +74,11 @@ typedef struct
     HttpdInstance httpdInstance;
 } HttpdFreertosInstance;
 
+/**
+ * Manually execute webserver task - do not use with httpdFreertosStart
+ */
+PLAT_RETURN platHttpServerTask(void *pvParameters);
+
 /*
  * connectionBuffer should be sized 'sizeof(RtosConnType) * maxConnections'
  */
@@ -86,3 +98,60 @@ HttpdInitStatus httpdFreertosInitEx(HttpdFreertosInstance *pInstance,
                                     uint32_t listenAddress,
                                     void* connectionBuffer, int maxConnections,
                                     HttpdFlags flags);
+
+
+typedef enum
+{
+	StartSuccess,
+	StartFailedSslNotConfigured
+} HttpdStartStatus;
+
+/**
+ * Call to start the server
+ */
+HttpdStartStatus httpdFreertosStart(HttpdFreertosInstance *pInstance);
+
+typedef enum
+{
+    SslInitSuccess,
+    SslInitContextCreationFailed
+} SslInitStatus;
+
+/**
+ * Configure SSL
+ *
+ * NOTE: Must be called before starting the server if SSL mode is enabled
+ * NOTE: Must be called again after each call to httpdShutdown()
+ */
+SslInitStatus httpdFreertosSslInit(HttpdFreertosInstance *pInstance);
+
+/**
+ * Set the ssl certificate and private key (in DER format)
+ *
+ * NOTE: Must be called before starting the server if SSL mode is enabled
+ */
+void httpdFreertosSslSetCertificateAndKey(HttpdFreertosInstance *pInstance,
+                                        const void *certificate, size_t certificate_size,
+                                        const void *private_key, size_t private_key_size);
+
+typedef enum
+{
+    SslClientVerifyNone,
+    SslClientVerifyRequired
+} SslClientVerifySetting;
+
+/**
+ * Enable / disable client certificate verification
+ *
+ * NOTE: Ssl defaults to SslClientVerifyNone
+ */
+void httpdFreertosSslSetClientValidation(HttpdFreertosInstance *pInstance,
+                                         SslClientVerifySetting verifySetting);
+
+/**
+ * Add a client certificate (in DER format)
+ *
+ * NOTE: Should use httpdFreertosSslSetClientValidation() to enable validation
+ */
+void httpdFreertosSslAddClientCertificate(HttpdFreertosInstance *pInstance,
+                                          const void *certificate, size_t certificate_size);

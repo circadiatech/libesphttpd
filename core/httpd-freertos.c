@@ -138,72 +138,68 @@ void closeConnection(HttpdFreertosInstance *pInstance, RtosConnType *rconn)
 #ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
 static SSL_CTX* sslCreateContext()
 {
-    int ret;
     SSL_CTX *ctx = NULL;
-
-    extern const unsigned char cacert_der_start[] asm("_binary_cacert_der_start");
-    extern const unsigned char cacert_der_end[]   asm("_binary_cacert_der_end");
-    const unsigned int cacert_der_bytes = cacert_der_end - cacert_der_start;
-
-    extern const unsigned char prvtkey_der_start[] asm("_binary_prvtkey_der_start");
-    extern const unsigned char prvtkey_der_end[]   asm("_binary_prvtkey_der_end");
-    const unsigned int prvtkey_der_bytes = prvtkey_der_end - prvtkey_der_start;
 
     ESP_LOGI(TAG, "SSL server context create ......");
 
     ctx = SSL_CTX_new(TLS_server_method());
     if (!ctx) {
         ESP_LOGE(TAG, "SSL_CXT_new");
-        goto failed1;
+    } else
+    {
+        ESP_LOGI(TAG, "OK");
     }
-    ESP_LOGI(TAG, "OK");
+
+    return ctx;
+}
+
+/**
+ * @return true if successful, false otherwise
+ */
+static bool sslSetDerCertificateAndKey(HttpdFreertosInstance *pInstance,
+                                        const void *certificate, size_t certificate_size,
+                                        const void *private_key, size_t private_key_size)
+{
+    bool status = true;
 
     ESP_LOGI(TAG, "SSL server context setting ca certificate......");
-    ret = SSL_CTX_use_certificate_ASN1(ctx, cacert_der_bytes, cacert_der_start);
+    int ret = SSL_CTX_use_certificate_ASN1(pInstance->ctx, certificate_size, certificate);
     if (!ret) {
 #ifdef linux
         ERR_print_errors_fp(stderr);
 #endif
         ESP_LOGE(TAG, "SSL_CTX_use_certificate_ASN1 %d", ret);
-        goto failed2;
+        status = false;
     }
     ESP_LOGI(TAG, "OK");
 
     ESP_LOGI(TAG, "SSL server context setting private key......");
-    ret = SSL_CTX_use_RSAPrivateKey_ASN1(ctx, prvtkey_der_start, prvtkey_der_bytes);
+    ret = SSL_CTX_use_RSAPrivateKey_ASN1(pInstance->ctx, private_key, private_key_size);
     if (!ret) {
 #ifdef linux
         ERR_print_errors_fp(stderr);
 #endif
         ESP_LOGE(TAG, "SSL_CTX_use_RSAPrivateKey_ASN1 %d", ret);
-        goto failed2;
+        status = false;
     }
 
-    return ctx;
-
-    failed2:
-    ESP_LOGE(TAG, "failed");
-    SSL_CTX_free(ctx);
-    ctx = NULL;
-    failed1:
-    return ctx;
+    return status;
 }
+
 #endif
 
 #ifdef linux
 
-#define PLAT_RETURN void*
 #define PLAT_TASK_EXIT return NULL
 
 #else
 
-#define PLAT_RETURN void
 #define PLAT_TASK_EXIT vTaskDelete(NULL)
 
 #endif
 
 
-static PLAT_RETURN platHttpServerTask(void *pvParameters)
+PLAT_RETURN platHttpServerTask(void *pvParameters)
 {
     int32 listenfd;
     int32 remotefd;
@@ -269,20 +265,6 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
 
     char serverStr[20];
     inet_ntop(AF_INET, &(server_addr.sin_addr), serverStr, sizeof(serverStr));
-
-#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
-    int ssl_error;
-
-    if(pInstance->httpdFlags & HTTPD_FLAG_SSL)
-    {
-        pInstance->ctx = sslCreateContext();
-        if(!pInstance->ctx)
-        {
-            ESP_LOGE(TAG, "create ssl context");
-            PLAT_TASK_EXIT;
-        }
-    }
-#endif
 
     /* Create socket for incoming connections */
     do{
@@ -432,7 +414,7 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
                     ESP_LOGD(TAG, "SSL server accept client .....");
                     ret = SSL_accept(pRconn->ssl);
                     if (!ret) {
-                        ssl_error = SSL_get_error(pRconn->ssl, ret);
+                        int ssl_error = SSL_get_error(pRconn->ssl, ret);
                         ESP_LOGE(TAG, "SSL_accept %d", ssl_error);
                         close(remotefd);
                         SSL_free(pRconn->ssl);
@@ -495,8 +477,14 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
 
                             if(ret <= 0)
                             {
-                                ssl_error = SSL_get_error(pRconn->ssl, ret);
-                                ESP_LOGE(TAG, "ssl_error %d, ret %d, bytesStillAvailable %d", ssl_error, ret, bytesStillAvailable);
+                                int ssl_error = SSL_get_error(pRconn->ssl, ret);
+                                if(ssl_error != SSL_ERROR_NONE)
+                                {
+                                    ESP_LOGE(TAG, "ssl_error %d, ret %d, bytesStillAvailable %d", ssl_error, ret, bytesStillAvailable);
+                                } else
+                                {
+                                    ESP_LOGD(TAG, "ssl_error %d, ret %d, bytesStillAvailable %d", ssl_error, ret, bytesStillAvailable);
+                                }
                             }
 
                             if (ret > 0) {
@@ -551,13 +539,6 @@ static PLAT_RETURN platHttpServerTask(void *pvParameters)
             closeConnection(pInstance, pRconn);
         }
     }
-
-#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
-    if(pInstance->httpdFlags & HTTPD_FLAG_SSL)
-    {
-        SSL_CTX_free(pInstance->ctx);
-    }
-#endif
 
     ESP_LOGI(TAG, "httpd on %s exiting", serverStr);
     pInstance->isShutdown = true;
@@ -695,17 +676,6 @@ HttpdInitStatus ICACHE_FLASH_ATTR httpdFreertosInitEx(HttpdFreertosInstance *pIn
 
     pInstance->rconn = connectionBuffer;
 
-#ifdef linux
-    pthread_t thread;
-    pthread_create(&thread, NULL, platHttpServerTask, pInstance);
-#else
-#ifdef ESP32
-    xTaskCreate(platHttpServerTask, (const char *)"esphttpd", HTTPD_STACKSIZE, pInstance, 4, NULL);
-#else
-    xTaskCreate(platHttpServerTask, (const signed char *)"esphttpd", HTTPD_STACKSIZE, pInstance, 4, NULL);
-#endif
-#endif
-
     ESP_LOGI(TAG, "address %s, port %d, maxConnections %d, mode %s",
             serverStr,
             port, maxConnections, (flags & HTTPD_FLAG_SSL) ? "ssl" : "non-ssl");
@@ -726,6 +696,129 @@ HttpdInitStatus ICACHE_FLASH_ATTR httpdFreertosInit(HttpdFreertosInstance *pInst
     ESP_LOGI(TAG, "init");
 
     return status;
+}
+
+SslInitStatus ICACHE_FLASH_ATTR httpdFreertosSslInit(HttpdFreertosInstance *pInstance)
+{
+    SslInitStatus status = SslInitSuccess;
+
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    if(pInstance->httpdFlags & HTTPD_FLAG_SSL)
+    {
+        pInstance->ctx = sslCreateContext();
+        if(!pInstance->ctx)
+        {
+            ESP_LOGE(TAG, "create ssl context");
+            status = StartFailedSslNotConfigured;
+        }
+    }
+#endif
+
+    return status;
+}
+
+void ICACHE_FLASH_ATTR httpdFreertosSslSetCertificateAndKey(HttpdFreertosInstance *pInstance,
+                                        const void *certificate, size_t certificate_size,
+                                        const void *private_key, size_t private_key_size)
+{
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    if(pInstance->httpdFlags & HTTPD_FLAG_SSL)
+    {
+        if(pInstance->ctx)
+        {
+            if(!sslSetDerCertificateAndKey(pInstance, certificate, certificate_size,
+                                private_key, private_key_size))
+            {
+                ESP_LOGE(TAG, "sslSetDerCertificate");
+            }
+        } else
+        {
+            ESP_LOGE(TAG, "Call httpdFreertosSslInit() first");
+        }
+    } else
+    {
+        ESP_LOGE(TAG, "Server not initialized for ssl");
+    }
+#endif
+}
+
+void ICACHE_FLASH_ATTR httpdFreertosSslSetClientValidation(HttpdFreertosInstance *pInstance,
+                                         SslClientVerifySetting verifySetting)
+{
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    int flags;
+
+    if(pInstance->httpdFlags & HTTPD_FLAG_SSL)
+    {
+        if(pInstance->ctx)
+        {
+            if(verifySetting == SslClientVerifyRequired)
+            {
+                flags = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+            } else
+            {
+                flags = SSL_VERIFY_NONE;
+            }
+
+            // NOTE: esp32's openssl wraper isn't using the function callback parameter, the last
+            // parameter passed.
+            SSL_CTX_set_verify(pInstance->ctx, flags, 0);
+        } else
+        {
+            ESP_LOGE(TAG, "Call httpdFreertosSslInit() first");
+        }
+    } else
+    {
+        ESP_LOGE(TAG, "Server not initialized for ssl");
+    }
+#endif
+}
+
+void ICACHE_FLASH_ATTR httpdFreertosSslAddClientCertificate(HttpdFreertosInstance *pInstance,
+                                          const void *certificate, size_t certificate_size)
+{
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    X509 *client_cacert = d2i_X509(NULL, certificate, certificate_size);
+    int rv = SSL_CTX_add_client_CA(pInstance->ctx, client_cacert);
+    if(rv == 0)
+    {
+        ESP_LOGE(TAG, "SSL_CTX_add_client_CA failed");
+    }
+#endif
+}
+
+HttpdStartStatus ICACHE_FLASH_ATTR httpdFreertosStart(HttpdFreertosInstance *pInstance)
+{
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    if((pInstance->httpdFlags & HTTPD_FLAG_SSL) && !pInstance->ctx)
+    {
+        ESP_LOGE(TAG, "StartFailedSslNotConfigured");
+        return StartFailedSslNotConfigured;
+    }
+#endif
+
+#ifdef linux
+    pthread_t thread;
+    pthread_create(&thread, NULL, platHttpServerTask, pInstance);
+#else
+#ifdef ESP32
+#ifndef CONFIG_ESPHTTPD_PROC_CORE
+#define CONFIG_ESPHTTPD_PROC_CORE   tskNO_AFFINITY
+#endif
+#ifndef CONFIG_ESPHTTPD_PROC_PRI
+#define CONFIG_ESPHTTPD_PROC_PRI    4
+#endif
+    xTaskCreatePinnedToCore(platHttpServerTask, (const char *)"esphttpd", HTTPD_STACKSIZE, pInstance, CONFIG_ESPHTTPD_PROC_PRI, NULL, CONFIG_ESPHTTPD_PROC_CORE);
+#else
+    xTaskCreate(platHttpServerTask, (const signed char *)"esphttpd", HTTPD_STACKSIZE, pInstance, 4, NULL);
+#endif
+#endif
+
+    ESP_LOGI(TAG, "starting server on port port %d, maxConnections %d, mode %s",
+            pInstance->httpPort, pInstance->httpdInstance.maxConnections,
+            (pInstance->httpdFlags & HTTPD_FLAG_SSL) ? "ssl" : "non-ssl");
+
+    return StartSuccess;
 }
 
 #ifdef CONFIG_ESPHTTPD_SHUTDOWN_SUPPORT
@@ -766,6 +859,13 @@ void httpdPlatShutdown(HttpdInstance *pInstance)
             vTaskDelay(200 / portTICK_PERIOD_MS);
         }
     }
+
+#ifdef CONFIG_ESPHTTPD_SSL_SUPPORT
+    if(pFR->httpdFlags & HTTPD_FLAG_SSL)
+    {
+        SSL_CTX_free(pFR->ctx);
+    }
+#endif
 
     close(s);
 }

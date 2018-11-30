@@ -5,6 +5,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "esp.h"
 
 /**
@@ -148,9 +152,9 @@ void httpdRedirect(HttpdConnData *conn, const char *newUrl);
 // Takes the valLen bytes stored in val, and converts it into at most retLen bytes that
 // are stored in the ret buffer. ret is always null terminated.
 // @return True if decoding fit into the ret buffer, false if not
-bool httpdUrlDecode(char *val, int valLen, char *ret, int retLen, int* bytesWritten);
+bool httpdUrlDecode(const char *val, int valLen, char *ret, int retLen, int* bytesWritten);
 
-int httpdFindArg(char *line, char *arg, char *buff, int buffLen);
+int httpdFindArg(const char *line, const char *arg, char *buff, int buffLen);
 
 typedef enum
 {
@@ -160,7 +164,8 @@ typedef enum
 
 typedef enum
 {
-	InitializationSuccess
+	InitializationSuccess,
+	InitializationFailure
 } HttpdInitStatus;
 
 /** Common elements to the core server code */
@@ -219,6 +224,10 @@ void httpdConnectCb(HttpdInstance *pInstance, HttpdConnData *pConn);
 
 #ifdef CONFIG_ESPHTTPD_SHUTDOWN_SUPPORT
 void httpdShutdown(HttpdInstance *pInstance);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

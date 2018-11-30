@@ -20,11 +20,11 @@ entry under 'Component config' when you run 'make menuconfig' on your esp-idf ap
 
 # SSL Support
 
-Libesphttpd supports https under FreeRTOS via openssl/mbedtls.
+Libesphttpd supports https under FreeRTOS via openssl/mbedtls. Server and client certificates are supported.
 
-Enable 'ESPHTTPD_SSL_SUPPORT' during project configuration. Note the instructions on including the CA
-certificate and private key in your project build as the build will fail without the appropriately
-named files and SSL initialization will fail if the files are not in the correct format.
+Enable 'ESPHTTPD_SSL_SUPPORT' during project configuration.
+
+See the 'How to use SSL' section below.
 
 # Programming guide
 
@@ -101,25 +101,15 @@ of a DNS-server (started by calling `captdnsInit()`) resolving all hostnames int
 ESP8266/ESP32. These redirect functions can then be used to further redirect the client to the hostname of 
 the ESP8266/ESP32.
 
-* __cgiReadFlash__ (arg: none)
-Will serve up the SPI flash of the ESP8266/ESP32 as a binary file.
-
-* __cgiGetFirmwareNext__ (arg: CgiUploadFlashDef flash description data)
-For OTA firmware upgrade: indicates if the user1 or user2 firmware needs to be sent to the ESP to do
-an OTA upgrade
-
-* __cgiUploadFirmware__ (arg: CgiUploadFlashDef flash description data)
-Accepts a POST request containing the user1 or user2 firmware binary and flashes it to the SPI flash
-
-* __cgiRebootFirmware__ (arg: none)
-Reboots the ESP8266/ESP32 to the newly uploaded code after a firmware upload.
+* Flash updating functions (OTA) - see [README-flash_api](./README-flash_api.md)
 
 * __cgiWiFi* functions__ (arg: various)
 These are used to change WiFi mode, scan for access points, associate to an access point etcetera. See
-the example projects for an implementation that uses these function calls.
+the example projects for an implementation that uses this function call.  [FreeRTOS Example](https://github.com/chmorgan/esphttpd-freertos)
 
 * __cgiWebsocket__ (arg: connect function)
-This CGI is used to set up a websocket. Websockets are described later in this document.
+This CGI is used to set up a websocket. Websockets are described later in this document.  See
+the example projects for an implementation that uses this function call.  [FreeRTOS Example](https://github.com/chmorgan/esphttpd-freertos)
 
 * __cgiEspFsHook__ (arg: none)
 Serves files from the espfs filesystem. The espFsInit function should be called first, with as argument
@@ -131,6 +121,94 @@ configured to do either.
 The espfs code comes with a small but efficient template routine, which can fill a template file stored on
 the espfs filesystem with user-defined data.
 
+* __cgiEspVfsGet__ (arg: base filesystem path)
+This is a catch-all cgi function. It takes the url passed to it, looks up the corresponding path in the filesystem and if it exists, sends the file. This simulates what a normal webserver would do with static files.  If the file is not found, (or if http method is not GET) this cgi function returns NOT_FOUND, and then other cgi functions specified later in the routing table can try.  See the example projects for an implementation that uses this function call.  [FreeRTOS Example](https://github.com/chmorgan/esphttpd-freertos)
+
+  The cgiArg value is the base directory path, if specified.
+  Usage:
+    * ROUTE_CGI("*", cgiEspVfsGet)
+    * ROUTE_CGI_ARG("*", cgiEspVfsGet, "/base/directory/")
+    * ROUTE_CGI_ARG("*", cgiEspVfsGet, ".") to use the current working directory
+    
+* __cgiEspVfsUpload__ (arg: base filesystem path)
+This is a POST and PUT handler for uploading files to the VFS filesystem.  See the example projects for an implementation that uses this function call.  [FreeRTOS Example](https://github.com/chmorgan/esphttpd-freertos)
+
+  Specify base directory (with trailing slash) or single file as 1st cgiArg.
+  If http method is not PUT or POST, this cgi function returns NOT_FOUND, and then other cgi functions specified later in the routing table can try.
+  
+  Filename can be specified 3 ways, in order of priority lowest to highest:
+  1. ___URL Path___  i.e. PUT http://1.2.3.4/path/newfile.txt
+  2. ___Inside multipart/form-data___ (todo not supported yet)
+  3. ___URL Parameter___  i.e. POST http://1.2.3.4/upload.cgi?filename=path%2Fnewfile.txt
+  
+  Usage:
+    * ROUTE_CGI_ARG("*", cgiEspVfsUpload, "/base/directory/")
+      - Allows creating/replacing files anywhere under "/base/directory/".  Don't forget to specify trailing slash in cgiArg!
+      - example: POST or PUT http://1.2.3.4/anydir/anyname.txt
+    * ROUTE_CGI_ARG("/filesystem/upload.cgi", cgiEspVfsUpload, "/base/directory/")
+      - Allows creating/replacing files anywhere under "/base/directory/".  Don't forget to specify trailing slash in cgiArg!
+      - example: POST or PUT http://1.2.3.4/filesystem/upload.cgi?filename=newdir%2Fnewfile.txt
+    * ROUTE_CGI_ARG("/writeable_file.txt", cgiEspVfsUpload, "/base/directory/writeable_file.txt")
+      - Allows only replacing content of one file at "/base/directory/writeable_file.txt".
+      - example: POST or PUT http://1.2.3.4/writeable_file.txt
+
+## How to configure and use SSL
+
+### How to create certificates
+
+	SSL servers require certificates. Steps to use:
+	- Place a 'cacert.der' and 'prvtkey.der' files in your app directory.
+
+	- To create self certified certificates:
+		$ openssl req -sha256 -newkey rsa:4096 -nodes -keyout key.pem -x509 -days 365 -out certificate.pem
+
+	- To generate .der certificates/keys from .pem certificates/keys:
+		$ openssl x509 -outform der -in certificate.pem -out certificate.der
+		$ openssl rsa -outform der -in key.pem -out key.der
+
+### Compile certificates into your binary image (option 1) OR
+	- Create a 'component.mk' file in your app directory and add these lines to it:
+		COMPONENT_EMBED_TXTFILES := cacert.der
+		COMPONENT_EMBED_TXTFILES += prvtkey.der
+
+And use the below code to gain access to these embedded files. Note the filename with extension is used to generate the binary variables, you can modify the embedded filenames but make sure to update the _binary_xxxx_yyy_start and end entries:
+
+```c
+extern const unsigned char cacert_der_start[] asm("_binary_cacert_der_start");
+extern const unsigned char cacert_der_end[]   asm("_binary_cacert_der_end");
+const size_t cacert_der_bytes = cacert_der_end - cacert_der_start;
+
+extern const unsigned char prvtkey_der_start[] asm("_binary_prvtkey_der_start");
+extern const unsigned char prvtkey_der_end[]   asm("_binary_prvtkey_der_end");
+const size_t prvtkey_der_bytes = prvtkey_der_end - prvtkey_der_start;
+```
+
+### Store / load certificates to a filesystem (option 2)
+See the mkspiffs documentation for more information on creating a spiffs filesystem and loading it at runtime.
+
+Otherwise use standard file functions, fopen/fread/fclose to read the certiricates into memory so they can be passed into libesphttpd.
+
+### Configure libesphttpd for ssl and load the server certificate and private key
+```c
+    httpdFreertosSslInit(&httpdFreertosInstance); // configure libesphttpd for ssl
+
+    // load the server certificate and private key
+    httpdFreertosSslSetCertificateAndKey(&httpdFreertosInstance,
+                                        cacert_der_ptr, cacert_der_size,
+                                        prvtkey_der_ptr, prvtkey_der_size);
+```
+
+### Optionally enable client certificate validation (client certificate validation is disabled by default) and load a series of client certificates
+
+You can embed client certificates into the flash image or store them in a filesystem depending on your need.
+
+```c
+    SslVerifySetting verifySetting = SslClientVerifyRequired;
+    httpdFreertosSslSetClientValidation(&httpdFreertosInstance,
+                                        verifySetting);
+    httpdFreertosSslAddClientCertificate(&httpdFreertosInstance,
+                                         client_certificate_ptr, client_certificate_size);
+```
 
 ## Writing a CGI function
 

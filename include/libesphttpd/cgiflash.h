@@ -11,11 +11,14 @@ typedef struct {
 	int fw1Pos;
 	int fw2Pos;
 	int fwSize;
-	char *tagName;
+	const char *tagName;
 } CgiUploadFlashDef;
 
 CgiStatus cgiGetFirmwareNext(HttpdConnData *connData);
 CgiStatus cgiUploadFirmware(HttpdConnData *connData);
 CgiStatus cgiRebootFirmware(HttpdConnData *connData);
+CgiStatus cgiSetBoot(HttpdConnData *connData);
+CgiStatus cgiEraseFlash(HttpdConnData *connData);
+CgiStatus cgiGetFlashInfo(HttpdConnData *connData);
 
 #endif
