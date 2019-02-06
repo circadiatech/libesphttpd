@@ -72,6 +72,8 @@ typedef struct
 #endif
 
     HttpdInstance httpdInstance;
+
+    void (*loopCb)(HttpdInstance *inst);
 } HttpdFreertosInstance;
 
 /**

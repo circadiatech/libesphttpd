@@ -521,6 +521,10 @@ PLAT_RETURN platHttpServerTask(void *pvParameters)
         }
 		else
 		{
+            if(pInstance->loopCb)
+            {
+                pInstance->loopCb(&pInstance->httpdInstance);
+            }
 			vTaskDelay(1);
 		}
     }
