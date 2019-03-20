@@ -12,6 +12,7 @@ typedef struct {
 	int fw2Pos;
 	int fwSize;
 	const char *tagName;
+	void (*fwManualUpgradeCb) (void);
 } CgiUploadFlashDef;
 
 CgiStatus cgiGetFirmwareNext(HttpdConnData *connData);

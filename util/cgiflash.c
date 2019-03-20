@@ -306,6 +306,8 @@ CgiStatus ICACHE_FLASH_ATTR cgiUploadFirmware(HttpdConnData *connData) {
 			{
 				state->err="Flash Success.";
 				ESP_LOGI(TAG, "Upload done. Sending response");
+
+				if(def->fwManualUpgradeCb) def->fwManualUpgradeCb();
 			}
 			// todo: automatically set boot flag?
 			err = esp_ota_set_boot_partition(state->update_partition);
