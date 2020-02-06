@@ -7,7 +7,11 @@
 #define WEBSOCK_FLAG_MORE (1<<0) //Set if the data is not the final data in the message; more follows
 #define WEBSOCK_FLAG_BIN (1<<1) //Set if the data is binary instead of text
 #define WEBSOCK_FLAG_CONT (1<<2) //set if this is a continuation frame (after WEBSOCK_FLAG_CONT)
+#define WEBSOCK_CLOSED -1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct Websock Websock;
 typedef struct WebsockPriv WebsockPriv;
@@ -33,5 +37,8 @@ void ICACHE_FLASH_ATTR cgiWebsocketClose(HttpdInstance *pInstance, Websock *ws, 
 CgiStatus ICACHE_FLASH_ATTR cgiWebSocketRecv(HttpdInstance *pInstance, HttpdConnData *connData, char *data, int len);
 int ICACHE_FLASH_ATTR cgiWebsockBroadcast(HttpdInstance *pInstance, const char *resource, char *data, int len, int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif
