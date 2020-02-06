@@ -368,9 +368,16 @@ void platHttpServerTaskProcess(ServerTaskContext *ctx) {
 		struct timeval tv;
 		tv.tv_sec  = 0;
 		tv.tv_usec = 0;
-        ret = select(maxfdp+1, &readset, &writeset, NULL, &tv);//&timeout
-        if(ret > 0){
-			ESP_LOGD(TAG, "select ret");
+        int ret = select(maxfdp+1, &readset, &writeset, NULL, &tv);//&timeout
+        if(ret <= 0)
+        {
+            if(ctx->pInstance->loopCb)
+            {
+                ctx->pInstance->loopCb(&ctx->pInstance->httpdInstance);
+            }
+			vTaskDelay(1);
+        }
+		ESP_LOGD(TAG, "select ret");
 #ifdef CONFIG_ESPHTTPD_SHUTDOWN_SUPPORT
     if (FD_ISSET(ctx->udpListenFd, &readset)) {
         ctx->shutdown = true;
@@ -539,14 +546,6 @@ void platHttpServerTaskProcess(ServerTaskContext *ctx) {
             }
 #endif
         }
-		else
-		{
-            if(pInstance->loopCb)
-            {
-                pInstance->loopCb(&pInstance->httpdInstance);
-            }
-			vTaskDelay(1);
-		}
     }
 }
 
