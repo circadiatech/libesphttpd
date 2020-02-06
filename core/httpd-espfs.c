@@ -9,13 +9,14 @@ Connector to let httpd use the espfs filesystem to serve the files in it.
 #ifdef linux
 #include <libesphttpd/linux.h>
 #else
-#include <libesphttpd/esp.h>
+#include <libesphttpd/esp.h>  // for sdkconfig.h
 #endif
 
-#include "libesphttpd/httpdespfs.h"
-#include "libesphttpd/espfs.h"
-#include "espfsformat.h"
+#include <libesphttpd/httpd-espfs.h>
 
+#ifdef CONFIG_ESPHTTPD_USE_ESPFS
+#include "espfs.h"
+#include "espfsformat.h"  // just for FLAG_GZIP
 #include "esp_log.h"
 const static char* TAG = "httpdespfs";
 
@@ -24,6 +25,12 @@ const static char* TAG = "httpdespfs";
 // The static files marked with FLAG_GZIP are compressed and will be served with GZIP compression.
 // If the client does not advertise that he accepts GZIP send following warning message (telnet users for e.g.)
 static const char *gzipNonSupportedMessage = "HTTP/1.0 501 Not implemented\r\nServer: esp8266-httpd/"HTTPDVER"\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: 52\r\n\r\nYour browser does not accept gzip-compressed data.\r\n";
+
+static EspFs *espfs = NULL;
+
+void httpdRegisterEspfs(EspFs *fs) {
+	espfs = fs;
+}
 
 /**
  * Try to open a file
@@ -63,7 +70,7 @@ static EspFsFile *tryOpenIndex_do(const char *path, const char *indexname) {
 		strcat(fname, indexname);
 
 		// Try to open, returns NULL if failed
-		retval = espFsOpen(fname);
+		retval = espFsOpen(espfs, fname);
 	}
 
 	return retval;
@@ -118,7 +125,7 @@ serveStaticFile(HttpdConnData *connData, const char* filepath) {
 	//First call to this cgi.
 	if (file==NULL) {
 		//First call to this cgi. Open the file so we can read it.
-		file = espFsOpen(filepath);
+		file = espFsOpen(espfs, filepath);
 		if (file == NULL) {
 			// file not found
 
@@ -248,7 +255,7 @@ CgiStatus ICACHE_FLASH_ATTR cgiEspFsTemplate(HttpdConnData *connData) {
 			ESP_LOGD(TAG, "Using filepath %s", filepath);
 		}
 
-		tpd->file = espFsOpen(filepath);
+		tpd->file = espFsOpen(espfs, filepath);
 
 		if (tpd->file == NULL) {
 			// maybe a folder, look for index file
@@ -413,3 +420,4 @@ CgiStatus ICACHE_FLASH_ATTR cgiEspFsTemplate(HttpdConnData *connData) {
 		return HTTPD_CGI_MORE;
 	}
 }
+#endif // CONFIG_ESPHTTPD_USE_ESPFS
