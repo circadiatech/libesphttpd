@@ -34,7 +34,7 @@ extern "C" {
 
 //Max send buffer len
 #ifndef HTTPD_MAX_SENDBUFF_LEN
-#define HTTPD_MAX_SENDBUFF_LEN	2048
+#define HTTPD_MAX_SENDBUFF_LEN	4096
 #endif
 
 //If some data can't be sent because the underlaying socket doesn't accept the data (like the nonos
