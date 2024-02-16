@@ -29,6 +29,8 @@ idf_component_register(
              "json"
              "spi_flash"
              "wpa_supplicant"
+             "esp_netif"
+             "esp_wifi"
 )
 
 target_compile_definitions (${COMPONENT_TARGET} PUBLIC -DFREERTOS)

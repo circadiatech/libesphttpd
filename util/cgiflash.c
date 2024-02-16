@@ -35,7 +35,7 @@ static const char *TAG = "ota";
 static int ICACHE_FLASH_ATTR checkBinHeader(void *buf) {
 	uint8_t *cd = (uint8_t *)buf;
 #ifdef ESP32
-	printf("checkBinHeader: %x %x %x\n", cd[0], ((uint16_t *)buf)[3], ((uint32_t *)buf)[0x6]);
+	printf("checkBinHeader: %x %x %" PRIx32 "\n", cd[0], ((uint16_t *)buf)[3], ((uint32_t *)buf)[0x6]);
 	if (cd[0] != 0xE9) return 0;
 	if (((uint16_t *)buf)[3] != 0x4008) return 0;
 	uint32_t a=((uint32_t *)buf)[0x6];
@@ -167,11 +167,11 @@ CgiStatus ICACHE_FLASH_ATTR cgiUploadFirmware(HttpdConnData *connData) {
 			state->err="Partition error, OTA not supported?";
 		} else {
 			if (state->configured != state->running) {
-				ESP_LOGW(TAG, "Configured OTA boot partition at offset 0x%08x, but running from offset 0x%08x",
+				ESP_LOGW(TAG, "Configured OTA boot partition at offset 0x%08" PRIx32 ", but running from offset 0x%08" PRIx32,
 					state->configured->address, state->running->address);
 				ESP_LOGW(TAG, "(This can happen if either the OTA boot data or preferred boot image become corrupted somehow.)");
 			}
-			ESP_LOGI(TAG, "Running partition type %d subtype %d (offset 0x%08x)",
+			ESP_LOGI(TAG, "Running partition type %d subtype %d (offset 0x%08" PRIx32 ")",
 				state->running->type, state->running->subtype, state->running->address);
 
 			state->state=FLST_START;
@@ -220,7 +220,7 @@ CgiStatus ICACHE_FLASH_ATTR cgiUploadFirmware(HttpdConnData *connData) {
 			    }
 			    else
 			    {
-			    	ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%x", state->update_partition->subtype, state->update_partition->address);
+					ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%" PRIx32, state->update_partition->subtype, state->update_partition->address);
 
 #ifdef CONFIG_ESPHTTPD_ALLOW_OTA_FACTORY_APP
 					// hack the API to allow write to the factory partition!

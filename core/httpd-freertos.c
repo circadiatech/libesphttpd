@@ -253,7 +253,7 @@ void platHttpServerTaskInit(ServerTaskContext *ctx, HttpdFreertosInstance *pInst
     udp_addr.sin_port = htons(ctx->pInstance->udpShutdownPort);
 
     ctx->udpListenFd = socket(AF_INET, SOCK_DGRAM, 0);
-    ESP_LOGI(TAG, "ctx->udpListenFd %d", ctx->udpListenFd);
+    ESP_LOGI(TAG, "ctx->udpListenFd %" PRIi32, ctx->udpListenFd);
     if(bind(ctx->udpListenFd, (struct sockaddr *)&udp_addr, sizeof(udp_addr)) != 0)
     {
         ESP_LOGE(TAG, "udp bind failure");
@@ -309,7 +309,7 @@ void platHttpServerTaskInit(ServerTaskContext *ctx, HttpdFreertosInstance *pInst
         /* Listen to the local connection */
         retListen = listen(ctx->listenFd, ctx->pInstance->httpdInstance.maxConnections);
         if (retListen != 0) {
-            ESP_LOGE(TAG, "listen on fd %d", ctx->listenFd);
+            ESP_LOGE(TAG, "listen on fd %" PRIi32, ctx->listenFd);
             perror("listen");
             vTaskDelay(1000/portTICK_PERIOD_MS);
         }

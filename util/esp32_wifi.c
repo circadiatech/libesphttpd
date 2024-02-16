@@ -8,6 +8,7 @@ ESP32 Cgi/template routines for the /wifi url.
 
 #include <libesphttpd/cgiwifi.h>
 #include <libesphttpd/esp.h>
+#include <esp_mac.h>
 
 #if defined(ESP32)
 #include <errno.h>
@@ -331,7 +332,7 @@ static void wifi_scan_done(wifi_event_sta_scan_done_t *event)
 
     if (event->status != ESP_OK)
     {
-        ESP_LOGI(TAG, "Scan failed. Event status: 0x%x",
+        ESP_LOGI(TAG, "Scan failed. Event status: 0x%" PRIx32,
                  event->status);
         goto err_out;
     }
@@ -971,7 +972,7 @@ err_out:
     }
 
     ESP_LOGD(TAG, "[%s] Leaving. State: %s delay: %d",
-             __FUNCTION__, state_names[cfg_state.state], delay);
+             __FUNCTION__, state_names[cfg_state.state], (int)delay);
 
     xSemaphoreGive(cfg_state.lock);
     return;
