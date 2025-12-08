@@ -31,6 +31,7 @@ idf_component_register(
              "wpa_supplicant"
              "esp_netif"
              "esp_wifi"
+             "efuse"
 )
 
 target_compile_definitions (${COMPONENT_TARGET} PUBLIC -DFREERTOS)

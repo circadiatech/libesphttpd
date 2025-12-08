@@ -19,6 +19,7 @@ Some flash handling cgi routines. Used for updating the ESPFS/OTA image.
 #include "esp_flash_partitions.h"
 #include "esp_image_format.h"
 #include "esp_system.h"      // for esp_restart();
+#include "esp_efuse.h"
 
 static const char *TAG = "ota";
 #endif
@@ -31,15 +32,37 @@ static const char *TAG = "ota";
 #define PARTITION_IS_OTA(partition) ((partition->type == ESP_PARTITION_TYPE_APP) && (partition->subtype >= ESP_PARTITION_SUBTYPE_APP_OTA_MIN) && (partition->subtype <= ESP_PARTITION_SUBTYPE_APP_OTA_MAX))
 
 
-// Check that the header of the firmware blob looks like actual firmware...
-static int ICACHE_FLASH_ATTR checkBinHeader(void *buf) {
+/*
+	Check that the header of the firmware blob looks like actual firmware.
+	Support ESP32 and ESP32-S3.
+	Check image header for chip id and app description for secure version.
+*/
+static int ICACHE_FLASH_ATTR checkBinHeader(void *buf, size_t len) {
+	if (len < sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t)) {
+		return 0;
+	}
+
 	uint8_t *cd = (uint8_t *)buf;
 #ifdef ESP32
+	#if defined(CONFIG_IDF_TARGET_ESP32)
 	printf("checkBinHeader: %x %x %" PRIx32 "\n", cd[0], ((uint16_t *)buf)[3], ((uint32_t *)buf)[0x6]);
 	if (cd[0] != 0xE9) return 0;
 	if (((uint16_t *)buf)[3] != 0x4008) return 0;
 	uint32_t a=((uint32_t *)buf)[0x6];
 	if (a!=0 && (a<=0x3F000000 || a>0x40400000)) return 0;
+	#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+	const esp_image_header_t* const hdr = buf;
+	if (hdr->magic != ESP_IMAGE_HEADER_MAGIC) return 0;
+	if (hdr->chip_id != ESP_CHIP_ID_ESP32S3) return 0;
+    if (hdr->segment_count == 0 || hdr->segment_count > ESP_IMAGE_MAX_SEGMENTS) return 0;
+	#else
+	return 0;
+	#endif /* CONFIG_IDF_TARGET_ESP32 */
+
+	#ifdef CIRCADIA_USE_SECURE_VERSION
+	const esp_app_desc_t* const desc = buf + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t);
+	if (!esp_efuse_check_secure_version(desc->secure_version)) return 0;
+	#endif  /* CIRCADIA_USE_SECURE_VERSION */
 #else
 	if (cd[0] != 0xEA) return 0;
 	if (cd[1] != 4 || cd[2] > 3 || cd[3] > 0x40) return 0;
@@ -211,7 +234,7 @@ CgiStatus ICACHE_FLASH_ATTR cgiUploadFirmware(HttpdConnData *connData) {
 				state->err="Combined flash images are unneeded/unsupported on ESP32!";
 				state->state=FLST_ERROR;
 				ESP_LOGE(TAG, "Combined flash image not supported on ESP32!");
-			} else if (def->type==CGIFLASH_TYPE_FW && checkBinHeader(connData->post.buff)) {
+			} else if (def->type==CGIFLASH_TYPE_FW && checkBinHeader(connData->post.buff, connData->post.buffLen)) {
 			    if (state->update_partition == NULL)
 			    {
 					ESP_LOGE(TAG, "update_partition not found!");
@@ -401,7 +424,7 @@ CgiStatus ICACHE_FLASH_ATTR cgiUploadFirmware(HttpdConnData *connData) {
 						state->address=def->fw2Pos;
 					}
 				}
-			} else if (def->type==CGIFLASH_TYPE_FW && checkBinHeader(connData->post->buff)) {
+			} else if (def->type==CGIFLASH_TYPE_FW && checkBinHeader(connData->post->buff, connData->post->buffLen)) {
 				if (connData->post->len > def->fwSize) {
 					state->err="Firmware image too large";
 					state->state=FLST_ERROR;
